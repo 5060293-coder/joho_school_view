@@ -1,0 +1,164 @@
+{
+  "entrance_N": {
+    "title": "正門（北向き - 校舎入口）",
+    "image": "https://picsum.photos/id/1018/800/450",
+    "ar_info": "📍 正面：昇降口 / 右手：自転車置き場",
+    "forward": "hallway_1f_N",
+    "left": "entrance_W",
+    "right": "entrance_E",
+    "uturn": "entrance_S",
+    "pos": {
+      "left": {
+        "x": 15,
+        "y": 80
+      },
+      "forward": {
+        "x": 50,
+        "y": 70
+      },
+      "right": {
+        "x": 85,
+        "y": 80
+      },
+      "uturn": {
+        "x": 50,
+        "y": 85
+      }
+    }
+  },
+  "entrance_E": {
+    "title": "正門（東向き - 体育館方面）",
+    "image": "https://picsum.photos/id/1015/800/450",
+    "ar_info": "📍 東校舎・体育館エリア",
+    "forward": null,
+    "left": "entrance_N",
+    "right": "entrance_S",
+    "uturn": "entrance_W",
+    "pos": {
+      "left": {
+        "x": 15,
+        "y": 50
+      },
+      "forward": {
+        "x": 50,
+        "y": 25
+      },
+      "right": {
+        "x": 85,
+        "y": 50
+      },
+      "uturn": {
+        "x": 50,
+        "y": 80
+      }
+    }
+  },
+  "entrance_S": {
+    "title": "正門（南向き - バス停方面）",
+    "image": "https://picsum.photos/id/1025/800/450",
+    "ar_info": "📍 バス停・駅方面（校外）",
+    "forward": null,
+    "left": "entrance_E",
+    "right": "entrance_W",
+    "uturn": "entrance_N",
+    "pos": {
+      "left": {
+        "x": 15,
+        "y": 73
+      },
+      "forward": {
+        "x": 50,
+        "y": 25
+      },
+      "right": {
+        "x": 85,
+        "y": 50
+      },
+      "uturn": {
+        "x": 50,
+        "y": 80
+      }
+    }
+  },
+  "entrance_W": {
+    "title": "正門（西向き - グラウンド）",
+    "image": "https://picsum.photos/id/1040/800/450",
+    "ar_info": "📍 グラウンド・テニスコート",
+    "forward": null,
+    "left": "entrance_S",
+    "right": "entrance_N",
+    "uturn": "entrance_E",
+    "pos": {
+      "left": {
+        "x": 15,
+        "y": 50
+      },
+      "forward": {
+        "x": 50,
+        "y": 25
+      },
+      "right": {
+        "x": 85,
+        "y": 50
+      },
+      "uturn": {
+        "x": 50,
+        "y": 80
+      }
+    }
+  },
+  "hallway_1f_N": {
+    "title": "1階中央廊下（北向き）",
+    "image": "https://picsum.photos/id/1019/800/450",
+    "ar_info": "📍 左手：1-A教室 / 右手：職員室",
+    "forward": null,
+    "left": null,
+    "right": null,
+    "uturn": "entrance_S",
+    "pos": {
+      "left": {
+        "x": 15,
+        "y": 50
+      },
+      "forward": {
+        "x": 50,
+        "y": 25
+      },
+      "right": {
+        "x": 85,
+        "y": 50
+      },
+      "uturn": {
+        "x": 50,
+        "y": 80
+      }
+    }
+  },
+  "え": {
+    "title": "",
+    "image": "",
+    "ar_info": "",
+    "forward": null,
+    "left": null,
+    "right": null,
+    "uturn": null,
+    "pos": {
+      "left": {
+        "x": 15,
+        "y": 50
+      },
+      "forward": {
+        "x": 50,
+        "y": 25
+      },
+      "right": {
+        "x": 85,
+        "y": 50
+      },
+      "uturn": {
+        "x": 50,
+        "y": 80
+      }
+    }
+  }
+}
