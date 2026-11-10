@@ -24,13 +24,7 @@ INITIAL_MAP_DATA = {
         "forward": "hallway_1f_N",
         "left": "entrance_W",
         "right": "entrance_E",
-        "uturn": "entrance_S",
-        "pos": {
-            "left": {"x": 15, "y": 50},
-            "forward": {"x": 50, "y": 25},
-            "right": {"x": 85, "y": 50},
-            "uturn": {"x": 50, "y": 80}
-        }
+        "uturn": "entrance_S"
     },
     "entrance_E": {
         "title": "正門（東向き - 体育館方面）",
@@ -39,13 +33,7 @@ INITIAL_MAP_DATA = {
         "forward": None,
         "left": "entrance_N",
         "right": "entrance_S",
-        "uturn": "entrance_W",
-        "pos": {
-            "left": {"x": 15, "y": 50},
-            "forward": {"x": 50, "y": 25},
-            "right": {"x": 85, "y": 50},
-            "uturn": {"x": 50, "y": 80}
-        }
+        "uturn": "entrance_W"
     },
     "entrance_S": {
         "title": "正門（南向き - バス停方面）",
@@ -54,13 +42,7 @@ INITIAL_MAP_DATA = {
         "forward": None,
         "left": "entrance_E",
         "right": "entrance_W",
-        "uturn": "entrance_N",
-        "pos": {
-            "left": {"x": 15, "y": 50},
-            "forward": {"x": 50, "y": 25},
-            "right": {"x": 85, "y": 50},
-            "uturn": {"x": 50, "y": 80}
-        }
+        "uturn": "entrance_N"
     },
     "entrance_W": {
         "title": "正門（西向き - グラウンド）",
@@ -69,13 +51,7 @@ INITIAL_MAP_DATA = {
         "forward": None,
         "left": "entrance_S",
         "right": "entrance_N",
-        "uturn": "entrance_E",
-        "pos": {
-            "left": {"x": 15, "y": 50},
-            "forward": {"x": 50, "y": 25},
-            "right": {"x": 85, "y": 50},
-            "uturn": {"x": 50, "y": 80}
-        }
+        "uturn": "entrance_E"
     },
     "hallway_1f_N": {
         "title": "1階中央廊下（北向き）",
@@ -84,13 +60,7 @@ INITIAL_MAP_DATA = {
         "forward": None,
         "left": None,
         "right": None,
-        "uturn": "entrance_S",
-        "pos": {
-            "left": {"x": 15, "y": 50},
-            "forward": {"x": 50, "y": 25},
-            "right": {"x": 85, "y": 50},
-            "uturn": {"x": 50, "y": 80}
-        }
+        "uturn": "entrance_S"
     }
 }
 
@@ -127,7 +97,6 @@ if page == "🧭 ナビゲーション":
     current_id = st.query_params.get("node", "entrance_N")
     
     if current_id not in map_data:
-        # 地点が削除されたなどの理由で存在しない場合は最初の地点に戻す
         if map_data:
             current_id = list(map_data.keys())[0]
         else:
@@ -141,6 +110,7 @@ if page == "🧭 ナビゲーション":
         st.subheader(current_node.get("title", ""))
         st.info(f"💡 ARガイド: {current_node.get('ar_info', '')}")
 
+        # CSSスタイルの定義（白背景・灰色の枠線・端固定配置）
         st.markdown("""
             <style>
             .overlay-container {
@@ -156,13 +126,12 @@ if page == "🧭 ナビゲーション":
             }
             .arrow-overlay-btn {
                 position: absolute;
-                transform: translate(-50%, -50%);
-                background-color: rgba(30, 30, 30, 0.45);
-                color: #ffffff !important;
-                border: 1.5px solid rgba(255, 255, 255, 0.7);
+                background-color: #ffffff;
+                color: #333333 !important;
+                border: 2px solid #888888;
                 border-radius: 50%;
-                width: 54px;
-                height: 54px;
+                width: 52px;
+                height: 52px;
                 font-size: 26px;
                 font-weight: bold;
                 display: flex;
@@ -170,13 +139,46 @@ if page == "🧭 ナビゲーション":
                 justify-content: center;
                 cursor: pointer;
                 box-shadow: 0px 4px 10px rgba(0,0,0,0.25);
-                backdrop-filter: blur(5px);
                 transition: all 0.2s ease-in-out;
                 text-decoration: none !important;
+                z-index: 10;
             }
             .arrow-overlay-btn:hover {
-                background-color: rgba(0, 0, 0, 0.85);
-                transform: translate(-50%, -50%) scale(1.15);
+                background-color: #f0f0f0;
+                border-color: #444444;
+            }
+            /* 上下左右の端固定位置 */
+            .arrow-btn-forward {
+                top: 15px;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+            .arrow-btn-forward:hover {
+                transform: translateX(-50%) scale(1.1);
+            }
+            .arrow-btn-uturn {
+                bottom: 15px;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+            .arrow-btn-uturn:hover {
+                transform: translateX(-50%) scale(1.1);
+            }
+            .arrow-btn-left {
+                top: 50%;
+                left: 15px;
+                transform: translateY(-50%);
+            }
+            .arrow-btn-left:hover {
+                transform: translateY(-50%) scale(1.1);
+            }
+            .arrow-btn-right {
+                top: 50%;
+                right: 15px;
+                transform: translateY(-50%);
+            }
+            .arrow-btn-right:hover {
+                transform: translateY(-50%) scale(1.1);
             }
             </style>
         """, unsafe_allow_html=True)
@@ -184,26 +186,17 @@ if page == "🧭 ナビゲーション":
         _, img_center, _ = st.columns([1, 3, 1])
         
         with img_center:
-            pos_data = current_node.get("pos", {
-                "left": {"x": 15, "y": 50},
-                "forward": {"x": 50, "y": 25},
-                "right": {"x": 85, "y": 50},
-                "uturn": {"x": 50, "y": 80}
-            })
-
             buttons_html = ""
             arrow_configs = [
-                ("left", "←", current_node.get("left")),
-                ("forward", "↑", current_node.get("forward")),
-                ("right", "→", current_node.get("right")),
-                ("uturn", "↓", current_node.get("uturn"))
+                ("forward", "↑", current_node.get("forward"), "arrow-btn-forward"),
+                ("uturn", "↓", current_node.get("uturn"), "arrow-btn-uturn"),
+                ("left", "←", current_node.get("left"), "arrow-btn-left"),
+                ("right", "→", current_node.get("right"), "arrow-btn-right")
             ]
 
-            for key, arrow_symbol, target in arrow_configs:
+            for key, arrow_symbol, target, class_name in arrow_configs:
                 if target is not None and target in map_data:
-                    px = pos_data.get(key, {}).get("x", 50)
-                    py = pos_data.get(key, {}).get("y", 50)
-                    buttons_html += f'<a href="?node={target}" target="_self" class="arrow-overlay-btn" style="left: {px}%; top: {py}%;" title="{key}">{arrow_symbol}</a>'
+                    buttons_html += f'<a href="?node={target}" target="_self" class="arrow-overlay-btn {class_name}" title="{key}">{arrow_symbol}</a>'
 
             html_str = f'<div class="overlay-container"><img src="{current_node.get("image", "")}" />{buttons_html}</div>'
             st.markdown(html_str, unsafe_allow_html=True)
@@ -219,7 +212,7 @@ if page == "🧭 ナビゲーション":
 # ==========================================
 elif page == "✏️ データ編集・画像登録":
     st.title("✏️ マップデータの編集・画像登録")
-    st.write("各地点の画像や案内テキスト、つながる移動先、および**矢印アイコン（← ↑ → ↓）の位置**を設定・削除できます。")
+    st.write("各地点の画像や案内テキスト、および**上下左右の移動先**を設定・削除できます。")
 
     node_list = list(map_data.keys())
     selected_option = st.selectbox("編集する地点を選択（または新規作成）", ["➕ 新しい地点を追加"] + node_list)
@@ -233,13 +226,7 @@ elif page == "✏️ データ編集・画像登録":
             "forward": None,
             "left": None,
             "right": None,
-            "uturn": None,
-            "pos": {
-                "left": {"x": 15, "y": 50},
-                "forward": {"x": 50, "y": 25},
-                "right": {"x": 85, "y": 50},
-                "uturn": {"x": 50, "y": 80}
-            }
+            "uturn": None
         }
     else:
         target_id = selected_option
@@ -265,46 +252,31 @@ elif page == "✏️ データ編集・画像登録":
             image_path = save_path
             st.success(f"画像をアップロードしました: {save_path}")
 
-        st.subheader("🧭 各方向の移動先と【矢印（← ↑ → ↓）の位置（%）】設定")
+        st.subheader("🧭 各方向（上下左右）の移動先設定")
         
         all_ids = [None] + list(map_data.keys())
         if target_id not in all_ids and target_id != "":
             all_ids.append(target_id)
 
-        curr_pos = target_node.get("pos", {
-            "left": {"x": 15, "y": 50},
-            "forward": {"x": 50, "y": 25},
-            "right": {"x": 85, "y": 50},
-            "uturn": {"x": 50, "y": 80}
-        })
-
-        col_l, col_f, col_r, col_u = st.columns(4)
+        col_f, col_u, col_l, col_r = st.columns(4)
         
-        with col_l:
-            st.markdown("#### ← (左折)")
-            new_left = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("left")) if target_node.get("left") in all_ids else 0, key=f"edit_left_{target_id}")
-            left_x = st.slider("横位置 X (%)", 0, 100, curr_pos.get("left", {}).get("x", 15), key=f"lx_{target_id}")
-            left_y = st.slider("縦位置 Y (%)", 0, 100, curr_pos.get("left", {}).get("y", 50), key=f"ly_{target_id}")
-
         with col_f:
-            st.markdown("#### ↑ (前進)")
+            st.markdown("#### ↑ 上 (前進)")
             new_forward = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("forward")) if target_node.get("forward") in all_ids else 0, key=f"edit_fwd_{target_id}")
-            fwd_x = st.slider("横位置 X (%)", 0, 100, curr_pos.get("forward", {}).get("x", 50), key=f"fx_{target_id}")
-            fwd_y = st.slider("縦位置 Y (%)", 0, 100, curr_pos.get("forward", {}).get("y", 25), key=f"fy_{target_id}")
-
-        with col_r:
-            st.markdown("#### → (右折)")
-            new_right = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("right")) if target_node.get("right") in all_ids else 0, key=f"edit_right_{target_id}")
-            right_x = st.slider("横位置 X (%)", 0, 100, curr_pos.get("right", {}).get("x", 85), key=f"rx_{target_id}")
-            right_y = st.slider("縦位置 Y (%)", 0, 100, curr_pos.get("right", {}).get("y", 50), key=f"ry_{target_id}")
 
         with col_u:
-            st.markdown("#### ↓ (Uターン)")
+            st.markdown("#### ↓ 下 (Uターン)")
             new_uturn = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("uturn")) if target_node.get("uturn") in all_ids else 0, key=f"edit_uturn_{target_id}")
-            uturn_x = st.slider("横位置 X (%)", 0, 100, curr_pos.get("uturn", {}).get("x", 50), key=f"ux_{target_id}")
-            uturn_y = st.slider("縦位置 Y (%)", 0, 100, curr_pos.get("uturn", {}).get("y", 80), key=f"uy_{target_id}")
 
-        # スライダー等の操作時にデータ構造を同期
+        with col_l:
+            st.markdown("#### ← 左 (左折)")
+            new_left = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("left")) if target_node.get("left") in all_ids else 0, key=f"edit_left_{target_id}")
+
+        with col_r:
+            st.markdown("#### → 右 (右折)")
+            new_right = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("right")) if target_node.get("right") in all_ids else 0, key=f"edit_right_{target_id}")
+
+        # データ更新用構造
         updated_node_data = {
             "title": new_title,
             "image": image_path,
@@ -312,39 +284,70 @@ elif page == "✏️ データ編集・画像登録":
             "forward": new_forward,
             "left": new_left,
             "right": new_right,
-            "uturn": new_uturn,
-            "pos": {
-                "left": {"x": left_x, "y": left_y},
-                "forward": {"x": fwd_x, "y": fwd_y},
-                "right": {"x": right_x, "y": right_y},
-                "uturn": {"x": uturn_x, "y": uturn_y}
-            }
+            "uturn": new_uturn
         }
         
         if target_id and target_id != "":
             st.session_state["map_data"][target_id] = updated_node_data
             save_map_data(st.session_state["map_data"])
 
-        st.subheader("🎯 矢印位置のリアルタイムプレビュー")
+        st.subheader("🎯 移動先設定のプレビュー")
+        
+        # プレビュー用スタイル
+        st.markdown("""
+            <style>
+            .preview-container {
+                position: relative;
+                width: 100%;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+            .preview-container img {
+                width: 100%;
+                border-radius: 8px;
+                display: block;
+            }
+            .preview-arrow-btn {
+                position: absolute;
+                background-color: #ffffff;
+                color: #333333;
+                border: 2px solid #888888;
+                border-radius: 50%;
+                width: 38px;
+                height: 38px;
+                font-size: 18px;
+                font-weight: bold;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
+                z-index: 10;
+            }
+            .p-btn-forward { top: 10px; left: 50%; transform: translateX(-50%); }
+            .p-btn-uturn { bottom: 10px; left: 50%; transform: translateX(-50%); }
+            .p-btn-left { top: 50%; left: 10px; transform: translateY(-50%); }
+            .p-btn-right { top: 50%; right: 10px; transform: translateY(-50%); }
+            </style>
+        """, unsafe_allow_html=True)
+
         preview_html = ""
         preview_arrows = [
-            (new_left, "←", left_x, left_y),
-            (new_forward, "↑", fwd_x, fwd_y),
-            (new_right, "→", right_x, right_y),
-            (new_uturn, "↓", uturn_x, uturn_y)
+            (new_forward, "↑", "p-btn-forward"),
+            (new_uturn, "↓", "p-btn-uturn"),
+            (new_left, "←", "p-btn-left"),
+            (new_right, "→", "p-btn-right")
         ]
 
-        for target, symbol, px, py in preview_arrows:
+        for target, symbol, class_name in preview_arrows:
             if target is not None:
-                preview_html += f'<div style="position: absolute; left: {px}%; top: {py}%; transform: translate(-50%, -50%); background: rgba(30,30,30,0.45); color: #ffffff; border: 1.5px solid rgba(255,255,255,0.7); border-radius: 50%; width: 40px; height: 40px; font-size: 20px; font-weight: bold; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(5px);">{symbol}</div>'
+                preview_html += f'<div class="preview-arrow-btn {class_name}">{symbol}</div>'
 
         if image_path:
-            preview_container = f'<div style="position: relative; width: 100%; max-width: 500px; margin: 0 auto;"><img src="{image_path}" style="width: 100%; border-radius: 8px;" />{preview_html}</div>'
+            preview_container = f'<div class="preview-container"><img src="{image_path}" />{preview_html}</div>'
             st.markdown(preview_container, unsafe_allow_html=True)
 
         st.write("---")
 
-        # ［保存］と［削除］ボタンのレイアウト設定
         col_btn_save, col_btn_del = st.columns([3, 1])
 
         # 保存ボタン
@@ -358,17 +361,15 @@ elif page == "✏️ データ編集・画像登録":
                     st.success("✅ 保存しました！")
                     st.toast("✅ 保存しました！")
 
-        # 地点削除ボタン（既存の地点が選択されている場合のみ表示）
+        # 地点削除ボタン
         with col_btn_del:
             if selected_option != "➕ 新しい地点を追加":
                 if st.button("🗑️ この地点を削除", key=f"del_{target_id}", use_container_width=True):
-                    # 他の地点の移動先リンクからこの地点を外す
                     for nid, node in st.session_state["map_data"].items():
                         for k in ["forward", "left", "right", "uturn"]:
                             if node.get(k) == target_id:
                                 node[k] = None
 
-                    # 対象の地点を削除
                     st.session_state["map_data"].pop(target_id, None)
                     save_map_data(st.session_state["map_data"])
                     st.toast(f"🗑️ 地点『{target_id}』を削除しました")
