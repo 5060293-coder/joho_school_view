@@ -1,7 +1,11 @@
 import os
 import json
+import time
+import base64
+import mimetypes
 import streamlit as st
-from PIL import Image
+import streamlit.components.v1 as components
+from PIL import Image, ImageOps
 
 # 0. 画面基本設定
 st.set_page_config(
@@ -10,61 +14,42 @@ st.set_page_config(
     layout="wide"
 )
 
-# 1. 保存用ファイル・フォルダの設定
-UPLOAD_DIR = "uploaded_images"
+# 1. 保存用ファイル・フォルダの設定（app.pyのあるフォルダを基準に固定）
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_images")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-DATA_FILE = "map_data.json"
+DATA_FILE = os.path.join(BASE_DIR, "map_data.json")
 
 # 2. 初期データ構造の定義
 INITIAL_MAP_DATA = {
     "entrance_N": {
         "title": "正門（北向き - 校舎入口）",
         "image": "https://picsum.photos/id/1018/800/450",
-        "ar_info": "📍 正面：昇降口 / 右手：自転車置き場",
-        "forward": "hallway_1f_N",
-        "left": "entrance_W",
-        "right": "entrance_E",
-        "uturn": "entrance_S"
+        "ar_info": "📍 正面：昇降口 / 右手：自転車置き場"
     },
     "entrance_E": {
         "title": "正門（東向き - 体育館方面）",
         "image": "https://picsum.photos/id/1015/800/450",
-        "ar_info": "📍 東校舎・体育館エリア",
-        "forward": None,
-        "left": "entrance_N",
-        "right": "entrance_S",
-        "uturn": "entrance_W"
+        "ar_info": "📍 東校舎・体育館エリア"
     },
     "entrance_S": {
         "title": "正門（南向き - バス停方面）",
         "image": "https://picsum.photos/id/1025/800/450",
-        "ar_info": "📍 バス停・駅方面（校外）",
-        "forward": None,
-        "left": "entrance_E",
-        "right": "entrance_W",
-        "uturn": "entrance_N"
+        "ar_info": "📍 バス停・駅方面（校外）"
     },
     "entrance_W": {
         "title": "正門（西向き - グラウンド）",
         "image": "https://picsum.photos/id/1040/800/450",
-        "ar_info": "📍 グラウンド・テニスコート",
-        "forward": None,
-        "left": "entrance_S",
-        "right": "entrance_N",
-        "uturn": "entrance_E"
+        "ar_info": "📍 グラウンド・テニスコート"
     },
     "hallway_1f_N": {
         "title": "1階中央廊下（北向き）",
         "image": "https://picsum.photos/id/1019/800/450",
-        "ar_info": "📍 左手：1-A教室 / 右手：職員室",
-        "forward": None,
-        "left": None,
-        "right": None,
-        "uturn": "entrance_S"
+        "ar_info": "📍 左手：1-A教室 / 右手：職員室"
     }
 }
 
-# 3. JSONファイル読み書き関数（永続化機能）
+# 3. JSONファイル読み書き関数
 def load_map_data():
     if os.path.exists(DATA_FILE):
         try:
@@ -79,9 +64,55 @@ def save_map_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-# セッション状態の読み込み
+# アップロード画像の最適化保存関数（向き補正・リサイズ・キャッシュ回避）
+def save_uploaded_image(uploaded_file, node_id):
+    timestamp = int(time.time() * 1000)
+    safe_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in str(node_id)) or "spot"
+    filename = f"{safe_id}_{timestamp}.jpg"
+    save_path = os.path.join(UPLOAD_DIR, filename)
+
+    img = Image.open(uploaded_file)
+    img = ImageOps.exif_transpose(img)
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+    # 横幅最大1280pxに縮小して表示負荷を軽減
+    max_width = 1280
+    if img.width > max_width:
+        ratio = max_width / img.width
+        new_height = int(img.height * ratio)
+        img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
+
+    img.save(save_path, format="JPEG", quality=85)
+    return os.path.join("uploaded_images", filename)
+
+# ローカル画像パスをHTML表示用のBase64データURLに変換する関数
+def get_image_src(image_path):
+    if not image_path:
+        return ""
+    if image_path.startswith(("http://", "https://", "data:")):
+        return image_path
+
+    candidates = [
+        image_path,
+        os.path.join(BASE_DIR, image_path),
+        os.path.join(UPLOAD_DIR, os.path.basename(image_path))
+    ]
+    for path in candidates:
+        if os.path.exists(path) and os.path.isfile(path):
+            mime_type, _ = mimetypes.guess_type(path)
+            if not mime_type:
+                mime_type = "image/jpeg"
+            with open(path, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+            return f"data:{mime_type};base64,{encoded}"
+    return ""
+
+# セッション状態の初期化
 if "map_data" not in st.session_state:
     st.session_state["map_data"] = load_map_data()
+if "uploader_version" not in st.session_state:
+    st.session_state["uploader_version"] = 0
 
 map_data = st.session_state["map_data"]
 
@@ -90,121 +121,184 @@ st.sidebar.title("🏫 校内ビュー管理")
 page = st.sidebar.radio("機能を選択", ["🧭 ナビゲーション", "✏️ データ編集・画像登録"])
 
 # ==========================================
-# ページ1: ナビゲーション画面
+# ページ1: ナビゲーション画面（リロードなしで画像のみ切り替え）
 # ==========================================
 if page == "🧭 ナビゲーション":
-    
-    current_id = st.query_params.get("node", "entrance_N")
-    
-    if current_id not in map_data:
-        if map_data:
-            current_id = list(map_data.keys())[0]
-        else:
-            current_id = "entrance_N"
-        st.query_params["node"] = current_id
-        
-    current_node = map_data.get(current_id, {})
-
     st.title("🏫 校内ストリートビュー")
-    if current_node:
-        st.subheader(current_node.get("title", ""))
-        st.info(f"💡 ARガイド: {current_node.get('ar_info', '')}")
 
-        # CSSスタイルの定義（白背景・灰色の枠線・端固定配置）
-        st.markdown("""
-            <style>
-            .overlay-container {
-                position: relative;
-                width: 100%;
+    slides = []
+    for node_id, node in map_data.items():
+        img_src = get_image_src(node.get("image", ""))
+        if img_src:
+            slides.append({
+                "id": node_id,
+                "title": node.get("title") or node_id,
+                "ar_info": node.get("ar_info", ""),
+                "image": img_src
+            })
+
+    if slides:
+        slides_json = json.dumps(slides, ensure_ascii=False)
+        show_arrows = "flex" if len(slides) > 1 else "none"
+
+        viewer_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <style>
+            body {{
+                margin: 0;
+                padding: 0;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                background-color: transparent;
+            }}
+            .viewer-wrapper {{
                 max-width: 800px;
                 margin: 0 auto;
-            }
-            .overlay-container img {
-                width: 100%;
+            }}
+            .header-row {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+            }}
+            .node-title {{
+                font-size: 22px;
+                font-weight: 600;
+                color: #1f2937;
+                margin: 0;
+            }}
+            .page-counter {{
+                font-size: 14px;
+                color: #6b7280;
+                background: #f3f4f6;
+                padding: 4px 10px;
+                border-radius: 12px;
+            }}
+            .ar-box {{
+                background-color: #e8f4fd;
+                color: #0c5460;
+                padding: 12px 16px;
                 border-radius: 8px;
+                margin-bottom: 16px;
+                font-size: 15px;
+            }}
+            .overlay-container {{
+                position: relative;
+                width: 100%;
+                background-color: #111827;
+                border-radius: 8px;
+                overflow: hidden;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }}
+            .overlay-container img {{
+                width: 100%;
+                max-height: 480px;
+                object-fit: contain;
                 display: block;
-            }
-            .arrow-overlay-btn {
+                user-select: none;
+            }}
+            .arrow-overlay-btn {{
                 position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
                 background-color: #ffffff;
-                color: #333333 !important;
+                color: #333333;
                 border: 2px solid #888888;
                 border-radius: 50%;
                 width: 52px;
                 height: 52px;
                 font-size: 26px;
                 font-weight: bold;
-                display: flex;
+                display: {show_arrows};
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                box-shadow: 0px 4px 10px rgba(0,0,0,0.25);
-                transition: all 0.2s ease-in-out;
-                text-decoration: none !important;
+                box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.25);
+                transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+                user-select: none;
                 z-index: 10;
-            }
-            .arrow-overlay-btn:hover {
+            }}
+            .arrow-overlay-btn:hover {{
                 background-color: #f0f0f0;
                 border-color: #444444;
-            }
-            /* 上下左右の端固定位置 */
-            .arrow-btn-forward {
-                top: 15px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-            .arrow-btn-forward:hover {
-                transform: translateX(-50%) scale(1.1);
-            }
-            .arrow-btn-uturn {
-                bottom: 15px;
-                left: 50%;
-                transform: translateX(-50%);
-            }
-            .arrow-btn-uturn:hover {
-                transform: translateX(-50%) scale(1.1);
-            }
-            .arrow-btn-left {
-                top: 50%;
+                transform: translateY(-50%) scale(1.1);
+            }}
+            .arrow-overlay-btn:active {{
+                transform: translateY(-50%) scale(0.95);
+            }}
+            .arrow-btn-left {{
                 left: 15px;
-                transform: translateY(-50%);
-            }
-            .arrow-btn-left:hover {
-                transform: translateY(-50%) scale(1.1);
-            }
-            .arrow-btn-right {
-                top: 50%;
+            }}
+            .arrow-btn-right {{
                 right: 15px;
-                transform: translateY(-50%);
-            }
-            .arrow-btn-right:hover {
-                transform: translateY(-50%) scale(1.1);
-            }
-            </style>
-        """, unsafe_allow_html=True)
+            }}
+        </style>
+        </head>
+        <body>
+            <div class="viewer-wrapper">
+                <div class="header-row">
+                    <h2 id="node-title" class="node-title"></h2>
+                    <span id="page-counter" class="page-counter"></span>
+                </div>
+                <div id="ar-info" class="ar-box"></div>
+                <div class="overlay-container">
+                    <img id="view-image" src="" alt="校内ビュー" />
+                    <button type="button" class="arrow-overlay-btn arrow-btn-left" onclick="prevSlide()" title="前の画像">←</button>
+                    <button type="button" class="arrow-overlay-btn arrow-btn-right" onclick="nextSlide()" title="次の画像">→</button>
+                </div>
+            </div>
 
-        _, img_center, _ = st.columns([1, 3, 1])
-        
-        with img_center:
-            buttons_html = ""
-            arrow_configs = [
-                ("forward", "↑", current_node.get("forward"), "arrow-btn-forward"),
-                ("uturn", "↓", current_node.get("uturn"), "arrow-btn-uturn"),
-                ("left", "←", current_node.get("left"), "arrow-btn-left"),
-                ("right", "→", current_node.get("right"), "arrow-btn-right")
-            ]
+            <script>
+                const slides = {slides_json};
+                let currentIndex = 0;
 
-            for key, arrow_symbol, target, class_name in arrow_configs:
-                if target is not None and target in map_data:
-                    buttons_html += f'<a href="?node={target}" target="_self" class="arrow-overlay-btn {class_name}" title="{key}">{arrow_symbol}</a>'
+                function renderSlide() {{
+                    const item = slides[currentIndex];
+                    document.getElementById("node-title").textContent = item.title;
+                    document.getElementById("page-counter").textContent = (currentIndex + 1) + " / " + slides.length;
+                    
+                    const arBox = document.getElementById("ar-info");
+                    if (item.ar_info) {{
+                        arBox.style.display = "block";
+                        arBox.textContent = "💡 ARガイド: " + item.ar_info;
+                    }} else {{
+                        arBox.style.display = "none";
+                    }}
 
-            html_str = f'<div class="overlay-container"><img src="{current_node.get("image", "")}" />{buttons_html}</div>'
-            st.markdown(html_str, unsafe_allow_html=True)
+                    document.getElementById("view-image").src = item.image;
+                }}
+
+                function prevSlide() {{
+                    currentIndex = (currentIndex - 1 + slides.length) % slides.length;
+                    renderSlide();
+                }}
+
+                function nextSlide() {{
+                    currentIndex = (currentIndex + 1) % slides.length;
+                    renderSlide();
+                }}
+
+                document.addEventListener("keydown", function(e) {{
+                    if (slides.length <= 1) return;
+                    if (e.key === "ArrowLeft") prevSlide();
+                    if (e.key === "ArrowRight") nextSlide();
+                }});
+
+                renderSlide();
+            </script>
+        </body>
+        </html>
+        """
+
+        components.html(viewer_html, height=620)
     else:
-        st.warning("登録されている地点がありません。『データ編集・画像登録』ページから追加してください。")
+        st.warning("表示できる地点がありません。『データ編集・画像登録』ページから画像を登録してください。")
 
-    if st.sidebar.button("🔄 スタート位置に戻る"):
-        st.query_params["node"] = "entrance_N"
+    if st.sidebar.button("🔄 最初の画像に戻る"):
         st.rerun()
 
 # ==========================================
@@ -212,166 +306,81 @@ if page == "🧭 ナビゲーション":
 # ==========================================
 elif page == "✏️ データ編集・画像登録":
     st.title("✏️ マップデータの編集・画像登録")
-    st.write("各地点の画像や案内テキスト、および**上下左右の移動先**を設定・削除できます。")
+    st.write("各地点のタイトル・案内テキスト・画像を登録および削除できます。ナビゲーション画面では登録順に切り替わります。")
 
     node_list = list(map_data.keys())
     selected_option = st.selectbox("編集する地点を選択（または新規作成）", ["➕ 新しい地点を追加"] + node_list)
 
     if selected_option == "➕ 新しい地点を追加":
-        target_id = st.text_input("地点ID（英数字で入力 例: library_1f_N）", value="")
+        default_new_id = f"spot_{len(node_list) + 1}"
+        while default_new_id in map_data:
+            default_new_id = f"spot_{int(time.time())}"
+        target_id = st.text_input("地点ID（英数字で入力 例: library_1f_N）", value=default_new_id)
         target_node = {
             "title": "",
             "image": "",
-            "ar_info": "",
-            "forward": None,
-            "left": None,
-            "right": None,
-            "uturn": None
+            "ar_info": ""
         }
     else:
         target_id = selected_option
         target_node = map_data[target_id]
 
-    if target_id or selected_option != "➕ 新しい地点を追加":
-        st.write("---")
-        
-        new_title = st.text_input("場所のタイトル", value=target_node.get("title", ""), key=f"title_{target_id}")
-        new_ar_info = st.text_input("ARガイドテキスト", value=target_node.get("ar_info", ""), key=f"ar_{target_id}")
+    st.write("---")
 
-        st.subheader("🖼️ 画像の変更")
-        image_path = target_node.get("image", "")
-        if image_path:
-            st.image(image_path, caption="現在の画像", width=300)
+    new_title = st.text_input("場所のタイトル", value=target_node.get("title", ""), key=f"title_{target_id}")
+    new_ar_info = st.text_input("ARガイドテキスト", value=target_node.get("ar_info", ""), key=f"ar_{target_id}")
 
-        uploaded_file = st.file_uploader("新しい写真ファイルをアップロード (JPG / PNG)", type=["jpg", "jpeg", "png"], key=f"file_{target_id}")
-        
-        if uploaded_file is not None:
-            save_path = os.path.join(UPLOAD_DIR, f"{target_id}_{uploaded_file.name}")
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            image_path = save_path
-            st.success(f"画像をアップロードしました: {save_path}")
+    st.subheader("🖼️ 画像の変更")
+    current_saved_image = target_node.get("image", "")
 
-        st.subheader("🧭 各方向（上下左右）の移動先設定")
-        
-        all_ids = [None] + list(map_data.keys())
-        if target_id not in all_ids and target_id != "":
-            all_ids.append(target_id)
+    uploaded_file = st.file_uploader(
+        "新しい写真ファイルをアップロード (JPG / PNG)",
+        type=["jpg", "jpeg", "png"],
+        key=f"file_{target_id}_{st.session_state['uploader_version']}"
+    )
 
-        col_f, col_u, col_l, col_r = st.columns(4)
-        
-        with col_f:
-            st.markdown("#### ↑ 上 (前進)")
-            new_forward = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("forward")) if target_node.get("forward") in all_ids else 0, key=f"edit_fwd_{target_id}")
+    display_image_path = current_saved_image
+    if uploaded_file is not None:
+        display_image_path = save_uploaded_image(uploaded_file, target_id)
+        st.info("🆕 新しい画像を選択中です。下の「保存・変更する」ボタンを押すと確定します。")
 
-        with col_u:
-            st.markdown("#### ↓ 下 (Uターン)")
-            new_uturn = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("uturn")) if target_node.get("uturn") in all_ids else 0, key=f"edit_uturn_{target_id}")
+    if display_image_path:
+        img_for_st = display_image_path
+        if not img_for_st.startswith(("http://", "https://")):
+            abs_candidate = os.path.join(BASE_DIR, img_for_st)
+            if os.path.exists(abs_candidate):
+                img_for_st = abs_candidate
+        if img_for_st.startswith(("http://", "https://")) or os.path.exists(img_for_st):
+            st.image(img_for_st, caption="現在の画像プレビュー", width=350)
+        else:
+            st.warning("画像ファイルが見つかりません。新しい画像をアップロードしてください。")
 
-        with col_l:
-            st.markdown("#### ← 左 (左折)")
-            new_left = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("left")) if target_node.get("left") in all_ids else 0, key=f"edit_left_{target_id}")
+    st.write("---")
 
-        with col_r:
-            st.markdown("#### → 右 (右折)")
-            new_right = st.selectbox("移動先ID", all_ids, index=all_ids.index(target_node.get("right")) if target_node.get("right") in all_ids else 0, key=f"edit_right_{target_id}")
+    col_btn_save, col_btn_del = st.columns([3, 1])
 
-        # データ更新用構造
-        updated_node_data = {
-            "title": new_title,
-            "image": image_path,
-            "ar_info": new_ar_info,
-            "forward": new_forward,
-            "left": new_left,
-            "right": new_right,
-            "uturn": new_uturn
-        }
-        
-        if target_id and target_id != "":
-            st.session_state["map_data"][target_id] = updated_node_data
-            save_map_data(st.session_state["map_data"])
+    # 保存ボタン
+    with col_btn_save:
+        if st.button("💾 この内容で保存・変更する", type="primary", key=f"save_{target_id}", use_container_width=True):
+            clean_id = target_id.strip()
+            if not clean_id:
+                st.error("地点IDを入力してください。")
+            else:
+                st.session_state["map_data"][clean_id] = {
+                    "title": new_title,
+                    "image": display_image_path,
+                    "ar_info": new_ar_info
+                }
+                save_map_data(st.session_state["map_data"])
+                st.session_state["uploader_version"] += 1
+                st.toast("✅ 保存しました！")
+                st.rerun()
 
-        st.subheader("🎯 移動先設定のプレビュー")
-        
-        # プレビュー用スタイル
-        st.markdown("""
-            <style>
-            .preview-container {
-                position: relative;
-                width: 100%;
-                max-width: 500px;
-                margin: 0 auto;
-            }
-            .preview-container img {
-                width: 100%;
-                border-radius: 8px;
-                display: block;
-            }
-            .preview-arrow-btn {
-                position: absolute;
-                background-color: #ffffff;
-                color: #333333;
-                border: 2px solid #888888;
-                border-radius: 50%;
-                width: 38px;
-                height: 38px;
-                font-size: 18px;
-                font-weight: bold;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
-                z-index: 10;
-            }
-            .p-btn-forward { top: 10px; left: 50%; transform: translateX(-50%); }
-            .p-btn-uturn { bottom: 10px; left: 50%; transform: translateX(-50%); }
-            .p-btn-left { top: 50%; left: 10px; transform: translateY(-50%); }
-            .p-btn-right { top: 50%; right: 10px; transform: translateY(-50%); }
-            </style>
-        """, unsafe_allow_html=True)
-
-        preview_html = ""
-        preview_arrows = [
-            (new_forward, "↑", "p-btn-forward"),
-            (new_uturn, "↓", "p-btn-uturn"),
-            (new_left, "←", "p-btn-left"),
-            (new_right, "→", "p-btn-right")
-        ]
-
-        for target, symbol, class_name in preview_arrows:
-            if target is not None:
-                preview_html += f'<div class="preview-arrow-btn {class_name}">{symbol}</div>'
-
-        if image_path:
-            preview_container = f'<div class="preview-container"><img src="{image_path}" />{preview_html}</div>'
-            st.markdown(preview_container, unsafe_allow_html=True)
-
-        st.write("---")
-
-        col_btn_save, col_btn_del = st.columns([3, 1])
-
-        # 保存ボタン
-        with col_btn_save:
-            if st.button("💾 この内容で保存・変更する", type="primary", key=f"save_{target_id}", use_container_width=True):
-                if not target_id:
-                    st.error("地点IDを入力してください。")
-                else:
-                    st.session_state["map_data"][target_id] = updated_node_data
-                    save_map_data(st.session_state["map_data"])
-                    st.success("✅ 保存しました！")
-                    st.toast("✅ 保存しました！")
-
-        # 地点削除ボタン
-        with col_btn_del:
-            if selected_option != "➕ 新しい地点を追加":
-                if st.button("🗑️ この地点を削除", key=f"del_{target_id}", use_container_width=True):
-                    for nid, node in st.session_state["map_data"].items():
-                        for k in ["forward", "left", "right", "uturn"]:
-                            if node.get(k) == target_id:
-                                node[k] = None
-
-                    st.session_state["map_data"].pop(target_id, None)
-                    save_map_data(st.session_state["map_data"])
-                    st.toast(f"🗑️ 地点『{target_id}』を削除しました")
-                    st.success(f"🗑️ 地点『{target_id}』を削除しました！")
-                    st.rerun()
+    # 地点削除ボタン
+    with col_btn_del:
+        if selected_option != "➕ 新しい地点を追加":
+            if st.button("🗑️ この地点を削除", key=f"del_{target_id}", use_container_width=True):
+                st.session_state["map_data"].pop(target_id, None)
+                save_map_data(st.session_state["map_data"])
+                st.toast(f"🗑️ 地点『{target_id}』を削除しました")
+                st.rerun()
