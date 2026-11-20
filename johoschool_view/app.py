@@ -1,7 +1,10 @@
 import os
+import io
 import json
 import time
 import base64
+import zipfile
+import datetime
 import mimetypes
 import streamlit as st
 import streamlit.components.v1 as components
@@ -110,6 +113,21 @@ def save_start_node(node_id):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump({"start_node": node_id}, f, ensure_ascii=False, indent=2)
 
+# ローカル画像の実ファイルパスを解決する補助関数
+def resolve_local_image_path(image_path):
+    if not image_path or image_path.startswith(("http://", "https://", "data:")):
+        return None
+    normalized = image_path.replace("\\", "/")
+    candidates = [
+        normalized,
+        os.path.join(BASE_DIR, normalized),
+        os.path.join(UPLOAD_DIR, os.path.basename(normalized))
+    ]
+    for path in candidates:
+        if os.path.exists(path) and os.path.isfile(path):
+            return path
+    return None
+
 # アップロード画像の最適化保存関数
 def save_uploaded_image(uploaded_file, node_id):
     timestamp = int(time.time() * 1000)
@@ -129,7 +147,7 @@ def save_uploaded_image(uploaded_file, node_id):
         img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
 
     img.save(save_path, format="JPEG", quality=88)
-    return os.path.join("uploaded_images", filename)
+    return f"uploaded_images/{filename}"
 
 # ローカル画像パスをHTML表示用のBase64データURLに変換する関数
 def get_image_src(image_path):
@@ -138,20 +156,104 @@ def get_image_src(image_path):
     if image_path.startswith(("http://", "https://", "data:")):
         return image_path
 
-    candidates = [
-        image_path,
-        os.path.join(BASE_DIR, image_path),
-        os.path.join(UPLOAD_DIR, os.path.basename(image_path))
-    ]
-    for path in candidates:
-        if os.path.exists(path) and os.path.isfile(path):
-            mime_type, _ = mimetypes.guess_type(path)
-            if not mime_type:
-                mime_type = "image/jpeg"
-            with open(path, "rb") as f:
-                encoded = base64.b64encode(f.read()).decode("utf-8")
-            return f"data:{mime_type};base64,{encoded}"
+    real_path = resolve_local_image_path(image_path)
+    if real_path:
+        mime_type, _ = mimetypes.guess_type(real_path)
+        if not mime_type:
+            mime_type = "image/jpeg"
+        with open(real_path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        return f"data:{mime_type};base64,{encoded}"
     return ""
+
+# 4. バックアップZIP作成・復元関数
+def create_backup_zip(data, start_node_id):
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # map_data.json を保存（パス区切りを / に統一）
+        clean_data = {}
+        added_images = set()
+        for nid, node in data.items():
+            node_copy = dict(node)
+            img_path = node_copy.get("image", "")
+            real_path = resolve_local_image_path(img_path)
+            if real_path:
+                fname = os.path.basename(real_path)
+                arcname = f"uploaded_images/{fname}"
+                node_copy["image"] = arcname
+                if arcname not in added_images:
+                    zf.write(real_path, arcname=arcname)
+                    added_images.add(arcname)
+            clean_data[nid] = node_copy
+
+        zf.writestr("map_data.json", json.dumps(clean_data, ensure_ascii=False, indent=2))
+        zf.writestr("app_config.json", json.dumps({"start_node": start_node_id}, ensure_ascii=False, indent=2))
+
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
+
+def restore_from_zip(uploaded_zip_file):
+    with zipfile.ZipFile(uploaded_zip_file, "r") as zf:
+        namelist = zf.namelist()
+        # ネストされたフォルダ構造にも対応するため map_data.json を探索
+        map_entry = None
+        for name in namelist:
+            if name.endswith("map_data.json") and not name.startswith("__MACOSX"):
+                map_entry = name
+                break
+
+        if not map_entry:
+            return False, "ZIPファイル内に map_data.json が見つかりませんでした。"
+
+        raw_map = zf.read(map_entry).decode("utf-8")
+        restored_map = json.loads(raw_map)
+        if not isinstance(restored_map, dict):
+            return False, "map_data.json の形式が正しくありません。"
+
+        # 画像ファイルの復元
+        for name in namelist:
+            if name.startswith("__MACOSX") or name.endswith("/"):
+                continue
+            normalized_name = name.replace("\\", "/")
+            if "/uploaded_images/" in f"/{normalized_name}":
+                fname = os.path.basename(normalized_name)
+                if fname:
+                    dest_path = os.path.join(UPLOAD_DIR, fname)
+                    with open(dest_path, "wb") as f:
+                        f.write(zf.read(name))
+
+        # パス表記を正規化して保存
+        for nid, node in restored_map.items():
+            img_val = node.get("image", "")
+            if img_val and not img_val.startswith(("http://", "https://", "data:")):
+                node["image"] = f"uploaded_images/{os.path.basename(img_val.replace(chr(92), '/'))}"
+
+        save_map_data(restored_map)
+        st.session_state["map_data"] = restored_map
+
+        # app_config.json（スタート位置）の復元
+        config_entry = None
+        for name in namelist:
+            if name.endswith("app_config.json") and not name.startswith("__MACOSX"):
+                config_entry = name
+                break
+
+        new_start = ""
+        if config_entry:
+            try:
+                cfg = json.loads(zf.read(config_entry).decode("utf-8"))
+                candidate_start = cfg.get("start_node", "")
+                if candidate_start in restored_map:
+                    new_start = candidate_start
+            except Exception:
+                pass
+
+        if not new_start:
+            new_start = load_start_node(restored_map)
+
+        save_start_node(new_start)
+        st.session_state["start_node"] = new_start
+        return True, f"✅ {len(restored_map)} 件の地点データと画像を復元しました！"
 
 # セッション状態の初期化
 if "map_data" not in st.session_state:
@@ -160,6 +262,8 @@ if "start_node" not in st.session_state:
     st.session_state["start_node"] = load_start_node(st.session_state["map_data"])
 if "uploader_version" not in st.session_state:
     st.session_state["uploader_version"] = 0
+if "zip_uploader_version" not in st.session_state:
+    st.session_state["zip_uploader_version"] = 0
 if "reset_counter" not in st.session_state:
     st.session_state["reset_counter"] = 0
 
@@ -170,7 +274,7 @@ if map_data and st.session_state["start_node"] not in map_data:
     st.session_state["start_node"] = list(map_data.keys())[0]
     save_start_node(st.session_state["start_node"])
 
-# 4. サイドバーによるページ切り替え
+# 5. サイドバーによるページ切り替え
 st.sidebar.title("🏫 校内ビュー管理")
 page = st.sidebar.radio("機能を選択", ["🧭 ナビゲーション", "✏️ データ編集・画像登録"])
 
@@ -294,7 +398,6 @@ if page == "🧭 ナビゲーション":
                 color: #9ca3af;
                 font-size: 16px;
             }}
-            /* 画像左上のタイトルオーバーレイ（全体画面時にも場所名を表示） */
             .fs-title-badge {{
                 position: absolute;
                 top: 16px;
@@ -314,7 +417,6 @@ if page == "🧭 ナビゲーション":
             .overlay-container.pseudo-fullscreen .fs-title-badge {{
                 display: block;
             }}
-            /* 右上の全体画面切り替えボタン */
             .fullscreen-btn {{
                 position: absolute;
                 top: 16px;
@@ -337,7 +439,6 @@ if page == "🧭 ナビゲーション":
                 border-color: #444444;
                 transform: scale(1.04);
             }}
-            /* 矢印ボタン（白背景・灰色の縁・上下左右の端固定） */
             .arrow-overlay-btn {{
                 position: absolute;
                 background-color: #ffffff;
@@ -500,7 +601,6 @@ if page == "🧭 ナビゲーション":
                     updateFsButtonState(!!document.webkitFullscreenElement);
                 }});
 
-                // キーボード操作（矢印キー移動・Fキーで全体画面・Escで解除）
                 document.addEventListener("keydown", function(e) {{
                     const node = nodes[currentId];
                     if (!node) return;
@@ -526,13 +626,54 @@ if page == "🧭 ナビゲーション":
         st.warning("登録されている地点がありません。『データ編集・画像登録』ページから追加してください。")
 
 # ==========================================
-# ページ2: データ編集・画像登録画面（スタート位置設定あり）
+# ページ2: データ編集・画像登録画面（バックアップ・復元機能つき）
 # ==========================================
 elif page == "✏️ データ編集・画像登録":
     st.title("✏️ マップデータの編集・画像登録")
-    st.write("スタート位置の設定、および各地点のタイトル・画像・**← ↑ ↓ → の移動先ID**を設定できます。")
+    st.write("データのバックアップ・復元、スタート位置の設定、および各地点の編集ができます。")
 
     node_list = list(map_data.keys())
+
+    # ------------------------------------------
+    # バックアップ（ダウンロード）＆ 復元セクション
+    # ------------------------------------------
+    with st.container(border=True):
+        st.subheader("📦 データのバックアップ・復元（永続化用）")
+        st.caption(
+            "クラウド再起動やコード更新でデータが消えるのを防ぐため、編集後はZIPをダウンロードしてください。"
+            "解凍した中身をGitHub（app.pyと同じ場所）へアップロードすると、初期データとして永久保存されます。"
+        )
+
+        col_dl, col_ul = st.columns(2)
+
+        with col_dl:
+            st.markdown("#### 📥 現在の全データを保存")
+            timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            zip_bytes = create_backup_zip(map_data, st.session_state["start_node"])
+            st.download_button(
+                label="📦 バックアップZIPをダウンロード",
+                data=zip_bytes,
+                file_name=f"streetview_backup_{timestamp_str}.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+
+        with col_ul:
+            st.markdown("#### 📤 バックアップから復元")
+            uploaded_zip = st.file_uploader(
+                "ダウンロードしたZIPファイルを選択",
+                type=["zip"],
+                key=f"zip_restore_{st.session_state['zip_uploader_version']}"
+            )
+            if uploaded_zip is not None:
+                if st.button("🔄 このZIPからデータを復元する", type="primary", use_container_width=True):
+                    ok, msg = restore_from_zip(uploaded_zip)
+                    if ok:
+                        st.session_state["zip_uploader_version"] += 1
+                        st.toast(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
     # ------------------------------------------
     # スタート位置（初期地点）の設定セクション
@@ -746,7 +887,6 @@ elif page == "✏️ データ編集・画像登録":
                 st.session_state["map_data"].pop(target_id, None)
                 save_map_data(st.session_state["map_data"])
 
-                # 削除された地点がスタート位置だった場合は残っている先頭地点へ更新
                 if st.session_state["start_node"] == target_id:
                     remaining = list(st.session_state["map_data"].keys())
                     new_start = remaining[0] if remaining else ""
