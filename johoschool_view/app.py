@@ -30,8 +30,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_images")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 DATA_FILE = os.path.join(BASE_DIR, "map_data.json")
+CONFIG_FILE = os.path.join(BASE_DIR, "app_config.json")
 
-# 2. 初期データ構造の定義（ARガイドを削除）
+# 2. 初期データ構造の定義
 INITIAL_MAP_DATA = {
     "entrance_N": {
         "title": "正門（北向き - 校舎入口）",
@@ -90,6 +91,25 @@ def save_map_data(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# スタート位置設定の読み書き関数
+def load_start_node(data):
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                start_id = cfg.get("start_node")
+                if start_id and start_id in data:
+                    return start_id
+        except Exception:
+            pass
+    if "entrance_N" in data:
+        return "entrance_N"
+    return list(data.keys())[0] if data else ""
+
+def save_start_node(node_id):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"start_node": node_id}, f, ensure_ascii=False, indent=2)
+
 # アップロード画像の最適化保存関数
 def save_uploaded_image(uploaded_file, node_id):
     timestamp = int(time.time() * 1000)
@@ -136,10 +156,19 @@ def get_image_src(image_path):
 # セッション状態の初期化
 if "map_data" not in st.session_state:
     st.session_state["map_data"] = load_map_data()
+if "start_node" not in st.session_state:
+    st.session_state["start_node"] = load_start_node(st.session_state["map_data"])
 if "uploader_version" not in st.session_state:
     st.session_state["uploader_version"] = 0
+if "reset_counter" not in st.session_state:
+    st.session_state["reset_counter"] = 0
 
 map_data = st.session_state["map_data"]
+
+# スタート位置が削除等で存在しなくなっていた場合の補正
+if map_data and st.session_state["start_node"] not in map_data:
+    st.session_state["start_node"] = list(map_data.keys())[0]
+    save_start_node(st.session_state["start_node"])
 
 # 4. サイドバーによるページ切り替え
 st.sidebar.title("🏫 校内ビュー管理")
@@ -164,12 +193,24 @@ if page == "🧭 ナビゲーション":
         }
 
     if nodes_for_js:
-        start_id = "entrance_N" if "entrance_N" in nodes_for_js else list(nodes_for_js.keys())[0]
+        start_id = st.session_state["start_node"]
+        if start_id not in nodes_for_js:
+            start_id = list(nodes_for_js.keys())[0]
+
+        start_title = nodes_for_js[start_id]["title"]
+        st.sidebar.caption(f"🚩 現在のスタート位置:\n**{start_title}** (`{start_id}`)")
+
+        if st.sidebar.button("🔄 スタート位置に戻る"):
+            st.session_state["reset_counter"] += 1
+            st.rerun()
+
         nodes_json = json.dumps(nodes_for_js, ensure_ascii=False)
         start_id_json = json.dumps(start_id, ensure_ascii=False)
+        reset_token = st.session_state["reset_counter"]
 
         viewer_html = f"""
         <!DOCTYPE html>
+        <!-- reset_token: {reset_token} -->
         <html>
         <head>
         <meta charset="utf-8">
@@ -484,17 +525,46 @@ if page == "🧭 ナビゲーション":
     else:
         st.warning("登録されている地点がありません。『データ編集・画像登録』ページから追加してください。")
 
-    if st.sidebar.button("🔄 スタート位置に戻る"):
-        st.rerun()
-
 # ==========================================
-# ページ2: データ編集・画像登録画面（ARガイド項目を削除）
+# ページ2: データ編集・画像登録画面（スタート位置設定あり）
 # ==========================================
 elif page == "✏️ データ編集・画像登録":
     st.title("✏️ マップデータの編集・画像登録")
-    st.write("各地点のタイトル・画像、および **← ↑ ↓ → の移動先ID** を設定・削除できます。")
+    st.write("スタート位置の設定、および各地点のタイトル・画像・**← ↑ ↓ → の移動先ID**を設定できます。")
 
     node_list = list(map_data.keys())
+
+    # ------------------------------------------
+    # スタート位置（初期地点）の設定セクション
+    # ------------------------------------------
+    if node_list:
+        with st.container(border=True):
+            st.subheader("🚩 スタート位置（最初に表示する地点）の設定")
+            current_start = st.session_state["start_node"]
+            if current_start not in node_list:
+                current_start = node_list[0]
+
+            col_start_sel, col_start_btn = st.columns([3, 1], vertical_alignment="bottom")
+            with col_start_sel:
+                selected_start = st.selectbox(
+                    "スタート地点を選択",
+                    node_list,
+                    index=node_list.index(current_start),
+                    format_func=lambda nid: f"{map_data[nid].get('title') or nid}  ({nid})",
+                    key="select_start_node"
+                )
+            with col_start_btn:
+                if st.button("🚩 スタート位置を保存", use_container_width=True):
+                    st.session_state["start_node"] = selected_start
+                    save_start_node(selected_start)
+                    st.toast(f"🚩 スタート位置を『{selected_start}』に設定しました！")
+                    st.rerun()
+
+    st.write("---")
+
+    # ------------------------------------------
+    # 各地点の編集・新規作成セクション
+    # ------------------------------------------
     selected_option = st.selectbox("編集する地点を選択（または新規作成）", ["➕ 新しい地点を追加"] + node_list)
 
     if selected_option == "➕ 新しい地点を追加":
@@ -657,6 +727,9 @@ elif page == "✏️ データ編集・画像登録":
                     "right": new_right
                 }
                 save_map_data(st.session_state["map_data"])
+                if not st.session_state["start_node"] or st.session_state["start_node"] not in st.session_state["map_data"]:
+                    st.session_state["start_node"] = clean_id
+                    save_start_node(clean_id)
                 st.session_state["uploader_version"] += 1
                 st.toast("✅ 保存しました！")
                 st.rerun()
@@ -672,5 +745,13 @@ elif page == "✏️ データ編集・画像登録":
 
                 st.session_state["map_data"].pop(target_id, None)
                 save_map_data(st.session_state["map_data"])
+
+                # 削除された地点がスタート位置だった場合は残っている先頭地点へ更新
+                if st.session_state["start_node"] == target_id:
+                    remaining = list(st.session_state["map_data"].keys())
+                    new_start = remaining[0] if remaining else ""
+                    st.session_state["start_node"] = new_start
+                    save_start_node(new_start)
+
                 st.toast(f"🗑️ 地点『{target_id}』を削除しました")
                 st.rerun()
