@@ -14,18 +14,28 @@ st.set_page_config(
     layout="wide"
 )
 
+# 画面の余白を詰めて表示領域を広げるCSS
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 1rem;
+        max-width: 96%;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # 1. 保存用ファイル・フォルダの設定
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploaded_images")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 DATA_FILE = os.path.join(BASE_DIR, "map_data.json")
 
-# 2. 初期データ構造の定義
+# 2. 初期データ構造の定義（ARガイドを削除）
 INITIAL_MAP_DATA = {
     "entrance_N": {
         "title": "正門（北向き - 校舎入口）",
-        "image": "https://picsum.photos/id/1018/800/450",
-        "ar_info": "📍 正面：昇降口 / 右手：自転車置き場",
+        "image": "https://picsum.photos/id/1018/1280/720",
         "left": "entrance_W",
         "forward": "hallway_1f_N",
         "uturn": "entrance_S",
@@ -33,8 +43,7 @@ INITIAL_MAP_DATA = {
     },
     "entrance_E": {
         "title": "正門（東向き - 体育館方面）",
-        "image": "https://picsum.photos/id/1015/800/450",
-        "ar_info": "📍 東校舎・体育館エリア",
+        "image": "https://picsum.photos/id/1015/1280/720",
         "left": "entrance_N",
         "forward": None,
         "uturn": "entrance_W",
@@ -42,8 +51,7 @@ INITIAL_MAP_DATA = {
     },
     "entrance_S": {
         "title": "正門（南向き - バス停方面）",
-        "image": "https://picsum.photos/id/1025/800/450",
-        "ar_info": "📍 バス停・駅方面（校外）",
+        "image": "https://picsum.photos/id/1025/1280/720",
         "left": "entrance_E",
         "forward": None,
         "uturn": "entrance_N",
@@ -51,8 +59,7 @@ INITIAL_MAP_DATA = {
     },
     "entrance_W": {
         "title": "正門（西向き - グラウンド）",
-        "image": "https://picsum.photos/id/1040/800/450",
-        "ar_info": "📍 グラウンド・テニスコート",
+        "image": "https://picsum.photos/id/1040/1280/720",
         "left": "entrance_S",
         "forward": None,
         "uturn": "entrance_E",
@@ -60,8 +67,7 @@ INITIAL_MAP_DATA = {
     },
     "hallway_1f_N": {
         "title": "1階中央廊下（北向き）",
-        "image": "https://picsum.photos/id/1019/800/450",
-        "ar_info": "📍 左手：1-A教室 / 右手：職員室",
+        "image": "https://picsum.photos/id/1019/1280/720",
         "left": None,
         "forward": None,
         "uturn": "entrance_S",
@@ -96,13 +102,13 @@ def save_uploaded_image(uploaded_file, node_id):
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
 
-    max_width = 1280
+    max_width = 1600
     if img.width > max_width:
         ratio = max_width / img.width
         new_height = int(img.height * ratio)
         img = img.resize((max_width, new_height), Image.Resampling.LANCZOS)
 
-    img.save(save_path, format="JPEG", quality=85)
+    img.save(save_path, format="JPEG", quality=88)
     return os.path.join("uploaded_images", filename)
 
 # ローカル画像パスをHTML表示用のBase64データURLに変換する関数
@@ -140,18 +146,16 @@ st.sidebar.title("🏫 校内ビュー管理")
 page = st.sidebar.radio("機能を選択", ["🧭 ナビゲーション", "✏️ データ編集・画像登録"])
 
 # ==========================================
-# ページ1: ナビゲーション画面（リロードなしで移動先へ切り替え）
+# ページ1: ナビゲーション画面（大型表示＋全体画面対応）
 # ==========================================
 if page == "🧭 ナビゲーション":
     st.title("🏫 校内ストリートビュー")
 
-    # JavaScriptに渡す全地点データを構築
     nodes_for_js = {}
     for node_id, node in map_data.items():
         nodes_for_js[node_id] = {
             "id": node_id,
             "title": node.get("title") or node_id,
-            "ar_info": node.get("ar_info", ""),
             "image": get_image_src(node.get("image", "")),
             "left": node.get("left"),
             "forward": node.get("forward"),
@@ -170,6 +174,9 @@ if page == "🧭 ナビゲーション":
         <head>
         <meta charset="utf-8">
         <style>
+            * {{
+                box-sizing: border-box;
+            }}
             body {{
                 margin: 0;
                 padding: 0;
@@ -177,18 +184,20 @@ if page == "🧭 ナビゲーション":
                 background-color: transparent;
             }}
             .viewer-wrapper {{
-                max-width: 800px;
+                width: 100%;
+                max-width: 1400px;
                 margin: 0 auto;
             }}
             .header-row {{
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 8px;
+                margin-bottom: 10px;
+                padding: 0 4px;
             }}
             .node-title {{
-                font-size: 22px;
-                font-weight: 600;
+                font-size: 24px;
+                font-weight: 700;
                 color: #1f2937;
                 margin: 0;
             }}
@@ -196,24 +205,16 @@ if page == "🧭 ナビゲーション":
                 font-size: 13px;
                 color: #6b7280;
                 background: #f3f4f6;
-                padding: 4px 10px;
+                padding: 4px 12px;
                 border-radius: 12px;
                 font-family: monospace;
-            }}
-            .ar-box {{
-                background-color: #e8f4fd;
-                color: #0c5460;
-                padding: 12px 16px;
-                border-radius: 8px;
-                margin-bottom: 16px;
-                font-size: 15px;
             }}
             .overlay-container {{
                 position: relative;
                 width: 100%;
-                min-height: 300px;
+                height: 640px;
                 background-color: #111827;
-                border-radius: 8px;
+                border-radius: 10px;
                 overflow: hidden;
                 display: flex;
                 align-items: center;
@@ -221,50 +222,114 @@ if page == "🧭 ナビゲーション":
             }}
             .overlay-container img {{
                 width: 100%;
-                max-height: 480px;
+                height: 100%;
                 object-fit: contain;
                 display: block;
                 user-select: none;
             }}
+            /* 全体画面（フルスクリーン）時のスタイル */
+            .overlay-container:fullscreen,
+            .overlay-container:-webkit-full-screen,
+            .overlay-container.pseudo-fullscreen {{
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                width: 100vw !important;
+                height: 100vh !important;
+                max-width: none !important;
+                max-height: none !important;
+                background-color: #000000 !important;
+                border-radius: 0 !important;
+                z-index: 999999 !important;
+            }}
+            .overlay-container:fullscreen img,
+            .overlay-container:-webkit-full-screen img,
+            .overlay-container.pseudo-fullscreen img {{
+                width: 100vw !important;
+                height: 100vh !important;
+                object-fit: contain !important;
+            }}
             .no-image-msg {{
                 color: #9ca3af;
-                font-size: 15px;
-                padding: 60px 20px;
+                font-size: 16px;
             }}
+            /* 画像左上のタイトルオーバーレイ（全体画面時にも場所名を表示） */
+            .fs-title-badge {{
+                position: absolute;
+                top: 16px;
+                left: 16px;
+                background-color: rgba(0, 0, 0, 0.65);
+                color: #ffffff;
+                padding: 8px 16px;
+                border-radius: 8px;
+                font-size: 18px;
+                font-weight: 600;
+                z-index: 20;
+                pointer-events: none;
+                display: none;
+            }}
+            .overlay-container:fullscreen .fs-title-badge,
+            .overlay-container:-webkit-full-screen .fs-title-badge,
+            .overlay-container.pseudo-fullscreen .fs-title-badge {{
+                display: block;
+            }}
+            /* 右上の全体画面切り替えボタン */
+            .fullscreen-btn {{
+                position: absolute;
+                top: 16px;
+                right: 16px;
+                background-color: rgba(255, 255, 255, 0.92);
+                color: #222222;
+                border: 2px solid #888888;
+                border-radius: 8px;
+                padding: 8px 14px;
+                font-size: 14px;
+                font-weight: 700;
+                cursor: pointer;
+                box-shadow: 0px 3px 8px rgba(0, 0, 0, 0.3);
+                transition: background-color 0.15s, transform 0.15s;
+                z-index: 25;
+                user-select: none;
+            }}
+            .fullscreen-btn:hover {{
+                background-color: #ffffff;
+                border-color: #444444;
+                transform: scale(1.04);
+            }}
+            /* 矢印ボタン（白背景・灰色の縁・上下左右の端固定） */
             .arrow-overlay-btn {{
                 position: absolute;
                 background-color: #ffffff;
                 color: #333333;
                 border: 2px solid #888888;
                 border-radius: 50%;
-                width: 52px;
-                height: 52px;
-                font-size: 26px;
+                width: 58px;
+                height: 58px;
+                font-size: 28px;
                 font-weight: bold;
                 display: none;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
-                box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.25);
+                box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.35);
                 transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
                 user-select: none;
-                z-index: 10;
+                z-index: 20;
             }}
             .arrow-overlay-btn:hover {{
                 background-color: #f0f0f0;
                 border-color: #444444;
             }}
-            /* 上下左右の端固定位置 */
             .arrow-btn-left {{
                 top: 50%;
-                left: 15px;
+                left: 18px;
                 transform: translateY(-50%);
             }}
             .arrow-btn-left:hover {{
                 transform: translateY(-50%) scale(1.1);
             }}
             .arrow-btn-forward {{
-                top: 15px;
+                top: 18px;
                 left: 50%;
                 transform: translateX(-50%);
             }}
@@ -272,7 +337,7 @@ if page == "🧭 ナビゲーション":
                 transform: translateX(-50%) scale(1.1);
             }}
             .arrow-btn-uturn {{
-                bottom: 15px;
+                bottom: 18px;
                 left: 50%;
                 transform: translateX(-50%);
             }}
@@ -281,7 +346,7 @@ if page == "🧭 ナビゲーション":
             }}
             .arrow-btn-right {{
                 top: 50%;
-                right: 15px;
+                right: 18px;
                 transform: translateY(-50%);
             }}
             .arrow-btn-right:hover {{
@@ -295,8 +360,9 @@ if page == "🧭 ナビゲーション":
                     <h2 id="node-title" class="node-title"></h2>
                     <span id="node-id-badge" class="node-badge"></span>
                 </div>
-                <div id="ar-info" class="ar-box"></div>
-                <div class="overlay-container">
+                <div id="fullscreen-target" class="overlay-container">
+                    <div id="fs-title-badge" class="fs-title-badge"></div>
+                    <button type="button" id="btn-fullscreen" class="fullscreen-btn" onclick="toggleFullscreen()">⛶ 全体画面</button>
                     <img id="view-image" src="" alt="校内ビュー" />
                     <div id="no-image" class="no-image-msg" style="display:none;">画像が未登録です</div>
                     <button type="button" id="btn-left" class="arrow-overlay-btn arrow-btn-left" title="左へ移動">←</button>
@@ -309,6 +375,8 @@ if page == "🧭 ナビゲーション":
             <script>
                 const nodes = {nodes_json};
                 let currentId = {start_id_json};
+                const container = document.getElementById("fullscreen-target");
+                const fsBtn = document.getElementById("btn-fullscreen");
 
                 function renderNode(nodeId) {{
                     const node = nodes[nodeId];
@@ -316,15 +384,8 @@ if page == "🧭 ナビゲーション":
                     currentId = nodeId;
 
                     document.getElementById("node-title").textContent = node.title;
+                    document.getElementById("fs-title-badge").textContent = node.title;
                     document.getElementById("node-id-badge").textContent = "ID: " + node.id;
-
-                    const arBox = document.getElementById("ar-info");
-                    if (node.ar_info) {{
-                        arBox.style.display = "block";
-                        arBox.textContent = "💡 ARガイド: " + node.ar_info;
-                    }} else {{
-                        arBox.style.display = "none";
-                    }}
 
                     const imgEl = document.getElementById("view-image");
                     const noImgEl = document.getElementById("no-image");
@@ -357,7 +418,48 @@ if page == "🧭 ナビゲーション":
                     }}
                 }}
 
-                // キーボードの矢印キー操作にも対応
+                function updateFsButtonState(isFs) {{
+                    fsBtn.textContent = isFs ? "✕ 元に戻す" : "⛶ 全体画面";
+                }}
+
+                function toggleFullscreen() {{
+                    const isNativeFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+                    const isPseudoFs = container.classList.contains("pseudo-fullscreen");
+
+                    if (!isNativeFs && !isPseudoFs) {{
+                        if (container.requestFullscreen) {{
+                            container.requestFullscreen().then(() => {{
+                                updateFsButtonState(true);
+                            }}).catch(() => {{
+                                container.classList.add("pseudo-fullscreen");
+                                updateFsButtonState(true);
+                            }});
+                        }} else if (container.webkitRequestFullscreen) {{
+                            container.webkitRequestFullscreen();
+                            updateFsButtonState(true);
+                        }} else {{
+                            container.classList.add("pseudo-fullscreen");
+                            updateFsButtonState(true);
+                        }}
+                    }} else {{
+                        if (document.fullscreenElement) {{
+                            document.exitFullscreen();
+                        }} else if (document.webkitFullscreenElement) {{
+                            document.webkitExitFullscreen();
+                        }}
+                        container.classList.remove("pseudo-fullscreen");
+                        updateFsButtonState(false);
+                    }}
+                }}
+
+                document.addEventListener("fullscreenchange", () => {{
+                    updateFsButtonState(!!document.fullscreenElement);
+                }});
+                document.addEventListener("webkitfullscreenchange", () => {{
+                    updateFsButtonState(!!document.webkitFullscreenElement);
+                }});
+
+                // キーボード操作（矢印キー移動・Fキーで全体画面・Escで解除）
                 document.addEventListener("keydown", function(e) {{
                     const node = nodes[currentId];
                     if (!node) return;
@@ -365,6 +467,11 @@ if page == "🧭 ナビゲーション":
                     if (e.key === "ArrowUp" && node.forward && nodes[node.forward]) renderNode(node.forward);
                     if (e.key === "ArrowDown" && node.uturn && nodes[node.uturn]) renderNode(node.uturn);
                     if (e.key === "ArrowRight" && node.right && nodes[node.right]) renderNode(node.right);
+                    if (e.key === "f" || e.key === "F") toggleFullscreen();
+                    if (e.key === "Escape" && container.classList.contains("pseudo-fullscreen")) {{
+                        container.classList.remove("pseudo-fullscreen");
+                        updateFsButtonState(false);
+                    }}
                 }});
 
                 renderNode(currentId);
@@ -373,7 +480,7 @@ if page == "🧭 ナビゲーション":
         </html>
         """
 
-        components.html(viewer_html, height=630)
+        components.html(viewer_html, height=700)
     else:
         st.warning("登録されている地点がありません。『データ編集・画像登録』ページから追加してください。")
 
@@ -381,11 +488,11 @@ if page == "🧭 ナビゲーション":
         st.rerun()
 
 # ==========================================
-# ページ2: データ編集・画像登録画面（← ↑ ↓ → の移動先設定あり）
+# ページ2: データ編集・画像登録画面（ARガイド項目を削除）
 # ==========================================
 elif page == "✏️ データ編集・画像登録":
     st.title("✏️ マップデータの編集・画像登録")
-    st.write("各地点のタイトル・案内テキスト・画像、および **← ↑ ↓ → の移動先ID** を設定・削除できます。")
+    st.write("各地点のタイトル・画像、および **← ↑ ↓ → の移動先ID** を設定・削除できます。")
 
     node_list = list(map_data.keys())
     selected_option = st.selectbox("編集する地点を選択（または新規作成）", ["➕ 新しい地点を追加"] + node_list)
@@ -398,7 +505,6 @@ elif page == "✏️ データ編集・画像登録":
         target_node = {
             "title": "",
             "image": "",
-            "ar_info": "",
             "left": None,
             "forward": None,
             "uturn": None,
@@ -411,7 +517,6 @@ elif page == "✏️ データ編集・画像登録":
     st.write("---")
 
     new_title = st.text_input("場所のタイトル", value=target_node.get("title", ""), key=f"title_{target_id}")
-    new_ar_info = st.text_input("ARガイドテキスト", value=target_node.get("ar_info", ""), key=f"ar_{target_id}")
 
     st.subheader("🖼️ 画像の変更")
     current_saved_image = target_node.get("image", "")
@@ -485,7 +590,7 @@ elif page == "✏️ データ編集・画像登録":
             .preview-container {
                 position: relative;
                 width: 100%;
-                max-width: 500px;
+                max-width: 600px;
                 margin: 0 auto;
             }
             .preview-container img {
@@ -499,9 +604,9 @@ elif page == "✏️ データ編集・画像登録":
                 color: #333333;
                 border: 2px solid #888888;
                 border-radius: 50%;
-                width: 38px;
-                height: 38px;
-                font-size: 18px;
+                width: 42px;
+                height: 42px;
+                font-size: 20px;
                 font-weight: bold;
                 display: flex;
                 align-items: center;
@@ -509,10 +614,10 @@ elif page == "✏️ データ編集・画像登録":
                 box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
                 z-index: 10;
             }
-            .p-btn-left { top: 50%; left: 10px; transform: translateY(-50%); }
-            .p-btn-forward { top: 10px; left: 50%; transform: translateX(-50%); }
-            .p-btn-uturn { bottom: 10px; left: 50%; transform: translateX(-50%); }
-            .p-btn-right { top: 50%; right: 10px; transform: translateY(-50%); }
+            .p-btn-left { top: 50%; left: 12px; transform: translateY(-50%); }
+            .p-btn-forward { top: 12px; left: 50%; transform: translateX(-50%); }
+            .p-btn-uturn { bottom: 12px; left: 50%; transform: translateX(-50%); }
+            .p-btn-right { top: 50%; right: 12px; transform: translateY(-50%); }
             </style>
         """, unsafe_allow_html=True)
 
@@ -546,7 +651,6 @@ elif page == "✏️ データ編集・画像登録":
                 st.session_state["map_data"][clean_id] = {
                     "title": new_title,
                     "image": display_image_path,
-                    "ar_info": new_ar_info,
                     "left": new_left,
                     "forward": new_forward,
                     "uturn": new_uturn,
@@ -561,7 +665,6 @@ elif page == "✏️ データ編集・画像登録":
     with col_btn_del:
         if selected_option != "➕ 新しい地点を追加":
             if st.button("🗑️ この地点を削除", key=f"del_{target_id}", use_container_width=True):
-                # 他の地点の移動先リンクから削除対象IDを解除
                 for nid, node in st.session_state["map_data"].items():
                     for k in ["left", "forward", "uturn", "right"]:
                         if node.get(k) == target_id:
